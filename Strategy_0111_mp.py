@@ -25,7 +25,7 @@ def run_strategy_01(symbol, date_text, prev_date_text, prev_date_ticker_table_na
     df1m['close_EMA10'] = df1m['close'].ewm(span=10, adjust=False).mean()
 
     # add and calculate column that was required by this strategy
-    df1m['vol_signal'] = df1m['buyvolume'] > mean_of_prev_buy_volume * 10
+    df1m['vol_signal'] = df1m['buyVolume'] > mean_of_prev_buy_volume * 10
     df1m['vol_signal'].rolling(window=2).sum()
     # find first index that vol_signal is True
     # handle IndexError: index 0 is out of bounds for axis 0 with size 0
@@ -58,7 +58,7 @@ def run_strategy_01(symbol, date_text, prev_date_text, prev_date_ticker_table_na
                     and df1m.iloc[index - 1]['close_EMA5'] < df1m.iloc[index - 1]['close_EMA10']):
                 # Stop loss calculation, by pip_no, now pip_no is mean of pip_no at that minute
                 # stop_loss = row['close'] - 0.0005
-                print(f"BUY: @{row.name}: EMA5 crossover EMA10 at {index}")
+                print(f"BUY {symbol}: @{row.name}: EMA5 crossover EMA10 at {index}")
                 # set orderStatus to 1, start from current row to last_index
                 df1m.loc[this_index:last_index, 'order_status'] = 1
                 # add buy record to orders dataframe
@@ -67,7 +67,7 @@ def run_strategy_01(symbol, date_text, prev_date_text, prev_date_ticker_table_na
                     'buy_price': row.high,
                     'max_price': row.high,
                     'buy_time': row.name,
-                    'buy_pip_no': row.pip_no,
+                    'buy_pip_no': row.pip_close,
                     'stop_loss_pip_no': row.pip_high - 3
                 }
 
@@ -76,12 +76,12 @@ def run_strategy_01(symbol, date_text, prev_date_text, prev_date_ticker_table_na
             if row['high'] > order['max_price']:
                 # set value of orders last row ['stop_loss_pip_no] to 80% of pip_no
                 # and update maxPrice of Order
-                order['stop_loss_pip_no'] = row['pip_no'] - 3
+                order['stop_loss_pip_no'] = row['pip_low'] - 3
                 order['max_price'] = row['high']
 
                 # print(f"{row.name}, row.high: {row.high}, orders.iloc[-1]['max_price']: {orders.iloc[-1]['max_price']}, increase stop loss")
 
-            if row['pip_no'] < order['stop_loss_pip_no']:
+            if row['pip_close'] < order['stop_loss_pip_no']:
                 # print(f"SELL: @{row.name}: Stop loss at {index}")
                 df1m.loc[this_index:last_index, 'order_status'] = 0
                 sell_price = row['low']
@@ -104,8 +104,8 @@ if __name__ == "__main__":
     prev_date_ticker_table_name = f"ticker_{prev_date.strftime('%Y%m%d')}"
 
     # symbols = for easily or controlled testing use the list ex: ['SABUY', 'MCA']
-    # symbols = stockeod.get_stock_list_in_date_text(prev_date_text)
-    symbols = ['SABUY']
+    symbols = stockeod.get_stock_list_in_date_text(prev_date_text)
+    # symbols = ['SABUY']
 
     # creating a pool object, initializing worker function, limit to 5 workers
     pool = multiprocessing.Pool(processes=15)

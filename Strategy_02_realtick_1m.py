@@ -6,6 +6,7 @@ import utils.stockeod_utils as stockeod
 import utils.ticker_table_manager as ttm
 import utils.pip_utils as pipu
 from dto.OrderDTO import OrderDTO
+from dto.ohlc import OhlcDTO
 
 date_text = '2024-06-13'
 
@@ -15,19 +16,70 @@ def run_strategy(symbol, date_text, prev_date_text, prev_date_ticker_table_name)
 
 
     rawTicketDf = ttm.get_ticker_df_from_ticker_table_of_date_text(symbol, date_text)
-    # get start time and end time from ttm
 
-    # Test OK
-    # timeDf = rawTicketDf.between_time('09:59', '10:00', inclusive="left")
+    # get startTime and endTime
+    startTime, endTime = ttm.get_start_and_end_time_of_date_and_symbol_in(date_text, symbol)
+
+    # from startTime to endoTime, loop in 1 minute interval
+    range = pd.date_range(start=startTime, end=endTime, freq='1min')
+
+    # create df1m DataFrame, use sniffTime as index
+    df1m = pd.DataFrame(columns=['sniffTime', 'open', 'high', 'low', 'close', 'buy_volume', 'sell_volume', 'qty', 'pip_open', 'pip_high', 'pip_low', 'pip_close', 'buy_tick_qty', 'sell_tick_qty'])
+    df1m.set_index('sniffTime', inplace=True)
+
+    for loopStartTime in range:
+        # loop endTime is 1 minute after loopStartTime
+        loopEndTime = loopStartTime + pd.Timedelta(minutes=1)
+
+        # get sub DataFrame where sniffTime is between loopStartTime and loopEndTime
+        thisMinTickerDf = rawTicketDf.between_time(loopStartTime.time(), loopEndTime.time())
+
+        ohlc = OhlcDTO(None, None, None, None, 0, 0, 0, None, None, None, None, 0, 0)
 
 
+        # if thisMinTickerDf len >=1 then update ohlc data
+        if len(thisMinTickerDf) >= 1:
+            ohlc.open = thisMinTickerDf.iloc[0]['price']
+            ohlc.high = thisMinTickerDf.iloc[0]['price']
+            ohlc.low = thisMinTickerDf.iloc[0]['price']
+            ohlc.close = thisMinTickerDf.iloc[0]['price']
+            ohlc.pip_open = thisMinTickerDf.iloc[0]['pipNo']
+            ohlc.pip_high = thisMinTickerDf.iloc[0]['pipNo']
+            ohlc.pip_low = thisMinTickerDf.iloc[0]['pipNo']
+            ohlc.pip_close = thisMinTickerDf.iloc[0]['pipNo']
+            # check side, then we can know
+            if thisMinTickerDf.iloc[0]['side'] == 'B':
+                ohlc.buy_volume = thisMinTickerDf.iloc[0]['volume']
+                ohlc.buy_tick_qty = thisMinTickerDf.iloc[0]['qty']
 
+            else:
+                ohlc.sell_volume = thisMinTickerDf.iloc[0]['volume']
+                ohlc.sell_tick_qty = thisMinTickerDf.iloc[0]['qty']
+            # volume increase
 
+        if(len(thisMinTickerDf) > 1):
+            # loop in  thisMinTickerDf.iloc[1:]
+            for index, row in thisMinTickerDf.iloc[1:].iterrows():
+                # update value to ohlc
+                ohlc.high = max(ohlc.high, row['price'])
+                ohlc.low = min(ohlc.low, row['price'])
+                ohlc.close = row['price']
+                ohlc.pip_high = max(ohlc.pip_high, row['pipNo'])
+                ohlc.pip_low = min(ohlc.pip_low, row['pipNo'])
+                ohlc.pip_close = row['pipNo']
+
+                # check side, then we can know
+                if row['side'] == 'B':
+                    ohlc.buy_volume += row['volume']
+                    ohlc.buy_tick_qty += row['qty']
+                else:
+                    ohlc.sell_volume += row['volume']
+                    ohlc.sell_tick_qty += row['qty']
+        # add ohlc to df1m, use loopStartTime as index snifftime
+        loop1mOhlcDf = pd.DataFrame([ohlc.__dict__], index=[loopStartTime])
+        df1m = pd.concat([df1m, loop1mOhlcDf])
+    rawTicketDf.between_time('12:30:00', '14:30:00')
     start_time, end_time = ttm.get_start_and_end_time_of_date(date_text)
-
-
-
-
 
     # add pip_high column, that calculate pip from high column, use pipu.get_buy_pip function
     df1m['pip_high'] = df1m['high'].apply(pipu.get_buy_pip, args=('B',))
