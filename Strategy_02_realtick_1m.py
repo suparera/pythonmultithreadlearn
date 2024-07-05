@@ -27,6 +27,9 @@ def run_strategy(symbol, date_text, prev_date_text, prev_date_ticker_table_name)
     df1m = pd.DataFrame(columns=['sniffTime', 'open', 'high', 'low', 'close', 'buy_volume', 'sell_volume', 'qty', 'pip_open', 'pip_high', 'pip_low', 'pip_close', 'buy_tick_qty', 'sell_tick_qty'])
     df1m.set_index('sniffTime', inplace=True)
 
+    # order object to keep track of Order, at this MVP, 1 order per symbol, only 1 time.
+    order: OrderDTO = {'buy_price': 0}
+
     for loopStartTime in range:
         # loop endTime is 1 minute after loopStartTime
         loopEndTime = loopStartTime + pd.Timedelta(minutes=1)
@@ -35,7 +38,6 @@ def run_strategy(symbol, date_text, prev_date_text, prev_date_ticker_table_name)
         thisMinTickerDf = rawTicketDf.between_time(loopStartTime.time(), loopEndTime.time())
 
         ohlc = OhlcDTO(None, None, None, None, 0, 0, 0, None, None, None, None, 0, 0)
-
 
         # if thisMinTickerDf len >=1 then update ohlc data
         if len(thisMinTickerDf) >= 1:
@@ -72,21 +74,51 @@ def run_strategy(symbol, date_text, prev_date_text, prev_date_ticker_table_name)
                 if row['side'] == 'B':
                     ohlc.buy_volume += row['volume']
                     ohlc.buy_tick_qty += row['qty']
+
                 else:
                     ohlc.sell_volume += row['volume']
                     ohlc.sell_tick_qty += row['qty']
+
         # add ohlc to df1m, use loopStartTime as index snifftime
         loop1mOhlcDf = pd.DataFrame([ohlc.__dict__], index=[loopStartTime])
-        df1m = pd.concat([df1m, loop1mOhlcDf])
-    rawTicketDf.between_time('12:30:00', '14:30:00')
-    start_time, end_time = ttm.get_start_and_end_time_of_date(date_text)
 
-    # add pip_high column, that calculate pip from high column, use pipu.get_buy_pip function
-    df1m['pip_high'] = df1m['high'].apply(pipu.get_buy_pip, args=('B',))
+        # to prevent FutureWarning: The behavior of array concatenation with empty entries is deprecated. In a future version, this will no longer exclude empty items when determining the result dtype. To retain the old behavior, exclude the empty entries before the concat operation.
+        #   df1m = pd.concat([df1m, loop1mOhlcDf])
 
-    # add EMA3, EMA10 of 'close' column
-    df1m['close_EMA5'] = df1m['close'].ewm(span=5, adjust=False).mean()
-    df1m['close_EMA10'] = df1m['close'].ewm(span=10, adjust=False).mean()
+        if len(df1m) == 0:
+            df1m = loop1mOhlcDf
+        else:
+            df1m = pd.concat([df1m, loop1mOhlcDf])
+
+        # when df1m len > 5 add EMA5 of pip_close columns
+        df1m['pip_close_EMA5'] = df1m['pip_close'].ewm(span=5, adjust=False).mean()
+        df1m['pip_close_EMA10'] = df1m['pip_close'].ewm(span=10, adjust=False).mean()
+
+        # find net_tick_qty of buy_tick_qty - sell_tick_qty, then create EMA5, EMA10 of net_tick_qty
+        df1m['net_tick_qty'] = df1m['buy_tick_qty'] - df1m['sell_tick_qty']
+        df1m['net_tick_qty_EMA5'] = df1m['net_tick_qty'].ewm(span=5, adjust=False).mean()
+        df1m['net_tick_qty_EMA10'] = df1m['net_tick_qty'].ewm(span=10, adjust=False).mean()
+
+        # BUY Signal check
+        if (    df1m.iloc[-1]['net_tick_qty_EMA5'] > df1m.iloc[-1]['net_tick_qty_EMA10']
+            and df1m.iloc[-2]['net_tick_qty_EMA5'] > df1m.iloc[-2]['net_tick_qty_EMA10']
+            and df1m.iloc[-1]['net_tick_qty_EMA5'] > 10
+            and order["buy_price"] == 0
+        ):
+            print(f"BUY: @{loopStartTime} symbol: {symbol} price: {df1m.iloc[-1]['close']}, net_tick_qty_EMA5: {df1m.iloc[-1]['net_tick_qty_EMA5']}, net_tick_qty_EMA10: {df1m.iloc[-1]['net_tick_qty_EMA10']}")
+            order = {
+                'symbol': symbol,
+                'buy_price': df1m.iloc[-1]['high'],
+                'max_price': df1m.iloc[-1]['high'],
+                'buy_time': loopStartTime,
+                'buy_pip_no': df1m.iloc[-1]['pip_close'],
+                'stop_loss_pip_no': df1m.iloc[-1]['pip_high'] - 3
+            }
+
+    # end of for loopStartTime in range: =============================
+
+    # Clean up unused row, stock market was closed between 12:30 to 14:00, that both sell and buy volume are 0
+    df1m = df1m[~((df1m.index >= f'{date_text} 12:30:00') & (df1m.index <= f'{date_text} 14:00:00') & (df1m['buy_volume'] == 0))]
 
     # add and calculate column that was required by this strategy
     df1m['vol_signal'] = df1m['buyvolume'] > mean_of_prev_buy_volume * 10
@@ -175,7 +207,7 @@ if __name__ == "__main__":
     print(f"startTime: {startTime}, endTime: {endTime}")
 
     # get raw ticker for symbol
-    symbols = ['SABUY']
+    # symbols = ['SABUY']
 
     # creating a pool object, initializing worker function, limit to 5 workers
     pool = multiprocessing.Pool(processes=1)
