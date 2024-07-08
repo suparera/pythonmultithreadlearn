@@ -8,9 +8,6 @@ import utils.ticker_table_manager as ttm
 import utils.pip_utils as pipu
 from dto.OrderDTO import OrderDTO
 
-# symbols = ['SABUY', 'MCA']
-# symbols = ['SABUY', 'MCA', 'SINGER', 'SGC']
-
 date_text = '2024-06-13'
 
 def run_strategy_01(symbol, date_text, prev_date_text, prev_date_ticker_table_name):
@@ -104,8 +101,8 @@ if __name__ == "__main__":
     prev_date_ticker_table_name = f"ticker_{prev_date.strftime('%Y%m%d')}"
 
     # symbols = for easily or controlled testing use the list ex: ['SABUY', 'MCA']
-    symbols = stockeod.get_stock_list_in_date_text(prev_date_text)
-    # symbols = ['SABUY']
+    # symbols = stockeod.get_stock_list_in_date_text(prev_date_text)
+    symbols = ['STA']
 
     # creating a pool object, initializing worker function, limit to 5 workers
     pool = multiprocessing.Pool(processes=15)

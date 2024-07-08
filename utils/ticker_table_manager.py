@@ -25,12 +25,15 @@ def create_table_for_day(table_name):
         sql = createSqlPrefix + table_name + createSqlSuffix
         cursor.execute(sql)
 
+
 def get_table_name_from_date(date):
     return TICKER_TABLE_NAME_PREFIX + date.strftime("%Y%m%d")
+
 
 def get_table_name_from_string(date_text):
     date = datetime.strptime(date_text, '%Y-%m-%d')
     return TICKER_TABLE_NAME_PREFIX + date.strftime("%Y%m%d")
+
 
 def get_mean_buy_volume_from_ticker_table_of_date_text(symbol, prev_date_text):
     prev_date_ticker_table_name = get_table_name_from_string(prev_date_text)
@@ -39,17 +42,21 @@ def get_mean_buy_volume_from_ticker_table_of_date_text(symbol, prev_date_text):
 
         sql = f"""SELECT sniffTime,price,side,qty,
         CASE WHEN side = 'B' THEN volume ELSE 0 END AS buyvolume,
-        CASE WHEN side = 'S' THEN volume ELSE 0 END AS sellvolume
+        CASE WHEN side = 'S' THEN volume ELSE 0 END AS sellVolume
         FROM {prev_date_ticker_table_name} WHERE symbol = '{symbol}';"""
 
         cursor.execute(sql)
         myresult = cursor.fetchall()
-        df = pd.DataFrame(myresult, columns=['sniffTime','price','side','qty','buyvolume','sellvolume'])
+        df = pd.DataFrame(myresult, columns=['sniffTime', 'price', 'side', 'qty', 'buyvolume', 'sellVolume'])
         df['price'] = df['price'].astype(float)
         df.set_index('sniffTime', inplace=True)
 
         # resample to 1 minute interval
-        df1m = df.resample('1min').agg({'price':'ohlc','buyvolume':'sum', 'sellvolume':'sum', 'qty':'sum'})
+        try:
+            df1m = df.resample('1min').agg({'price': 'ohlc', 'buyvolume': 'sum', 'sellVolume': 'sum', 'qty': 'sum'})
+        except Exception as e:
+            print(f"symbol:{symbol}, Error: {e}")
+            return None
         df1m.columns = df1m.columns.droplevel(0)
 
         # remove df1m where sniffTime between '2024-01-19 12:30:00' and '2024-01-19 14:30:00' and qty = 0
@@ -60,29 +67,56 @@ def get_mean_buy_volume_from_ticker_table_of_date_text(symbol, prev_date_text):
         # return mean of buyvolume/1min
         return df1m['buyvolume'].mean()
 
+
 def get_df1m_from_ticker_table_of_date_text(symbol, date_text):
     with dbu.get_pool().get_connection() as con:
         cursor = con.cursor()
         ticker_table_name = get_table_name_from_string(date_text)
-        sql = f"""SELECT sniffTime,price,side,qty,
-        CASE WHEN side = 'B' THEN volume ELSE 0 END AS buyvolume,
-        CASE WHEN side = 'S' THEN volume ELSE 0 END AS sellvolume,
-        pipNo as pip_no,
-        CASE WHEN side = 'B' THEN qty ELSE 0 END AS buyTickQty,
-        CASE WHEN side = 'S' THEN qty ELSE 0 END AS sellTickQty
+        sql = f"""SELECT sniffTime,price,side,qty
+        , CASE WHEN side = 'B' THEN volume ELSE 0 END AS buyVolume
+        , CASE WHEN side = 'S' THEN volume ELSE 0 END AS sellVolume
+        , pipNo as pip_no
+        , CASE WHEN side = 'B' THEN qty ELSE 0 END AS buyTickQty
+        , CASE WHEN side = 'S' THEN qty ELSE 0 END AS sellTickQty
+        , CASE WHEN side = 'B' THEN 1 ELSE 0 END AS buyId
+        , CASE WHEN side = 'S' THEN 1 ELSE 0 END AS sellId
         FROM {ticker_table_name} WHERE symbol = '{symbol}';"""
         cursor.execute(sql)
         myresult = cursor.fetchall()
-        df = pd.DataFrame(myresult, columns=['sniffTime','price','side','qty','buyvolume','sellvolume','pip_no', 'buyTickQty', 'sellTickQty'])
+        df = pd.DataFrame(myresult, columns=['sniffTime', 'price', 'side', 'qty', 'buyVolume', 'sellVolume', 'pip_no',
+                                             'buyTickQty', 'sellTickQty', 'buyId', 'sellId'])
         df['price'] = df['price'].astype(float)
         df.set_index('sniffTime', inplace=True)
         # catch exception TypeError: Only valid with DatetimeIndex, TimedeltaIndex or PeriodIndex, but got an instance of 'Index'
         df.index = pd.to_datetime(df.index)
+
         # resample to 1 minute interval
-        df1m = df.resample('1min').agg({'price':'ohlc','buyvolume':'sum', 'sellvolume':'sum', 'qty':'sum', 'pip_no':'ohlc', 'buyTickQty':'sum', 'sellTickQty':'sum'})
+        try:
+            df1m = df.resample('1min').agg({
+                'price': 'ohlc'
+                , 'buyVolume': 'sum'
+                , 'sellVolume': 'sum'
+                , 'qty': 'sum'
+                , 'pip_no': 'ohlc'
+                , 'buyTickQty': 'sum'
+                , 'sellTickQty': 'sum'
+                , 'buyId': 'sum'
+                , 'sellId': 'sum'
+            })
+        except Exception as e:
+            # print(f"Error: {e}")
+            # print(f"symbol: {symbol}, date_text: {date_text}")
+            # print(f"df: {df}")
+            return None
+
         df1m.columns = df1m.columns.droplevel(0)
         # rename column of df1m
-        df1m.columns = ['open', 'high', 'low', 'close', 'buyVolume', 'sellVolume', 'qty', 'pip_open', 'pip_high', 'pip_low', 'pip_close', 'buyTickQty', 'sellTickQty']
+        df1m.columns = [
+            'open', 'high', 'low', 'close'
+            , 'buyVolume', 'sellVolume', 'qty'
+            , 'pip_open', 'pip_high', 'pip_low', 'pip_close'
+            , 'buyTickQty', 'sellTickQty', 'buyId', 'sellId'
+        ]
 
         return df1m
 
@@ -96,11 +130,12 @@ def get_ticker_df_from_ticker_table_of_date_text(symbol, date_text):
         FROM {ticker_table_name} WHERE symbol = '{symbol}';"""
         cursor.execute(sql)
         myresult = cursor.fetchall()
-        df = pd.DataFrame(myresult, columns=['sniffTime','symbol','price','pipNo','side','volume','qty','tf01'])
+        df = pd.DataFrame(myresult, columns=['sniffTime', 'symbol', 'price', 'pipNo', 'side', 'volume', 'qty', 'tf01'])
         df['price'] = df['price'].astype(float)
         df.set_index('sniffTime', inplace=True)
         cursor.close()
         return df
+
 
 def get_pip_change_count_df(symbol, date_text):
     with dbu.get_pool().get_connection() as con:
@@ -109,10 +144,11 @@ def get_pip_change_count_df(symbol, date_text):
         sql = f"""select sniffTime, (CASE side WHEN 'S' THEN pipNo+1 ELSE pipNo END) as buy_pip_no, volume, price*volume AS value FROM {ticker_table_name} WHERE symbol = '{symbol}';"""
         cursor.execute(sql)
         myresult = cursor.fetchall()
-        df = pd.DataFrame(myresult, columns=['sniffTime','buy_pip_no','volume','value'])
+        df = pd.DataFrame(myresult, columns=['sniffTime', 'buy_pip_no', 'volume', 'value'])
         df['value'] = df['value'].astype(float)
         df.set_index('sniffTime', inplace=True)
         return df
+
 
 def get_start_and_end_time_of_date_and_symbol_in(date_text, symbols):
     with dbu.get_pool().get_connection() as con:
@@ -128,9 +164,9 @@ def get_start_and_end_time_of_date_and_symbol_in(date_text, symbols):
         # round down start_time to minute level
         start_time = myresult[0][0].replace(second=0, microsecond=0)
 
-
         end_time = myresult[0][1].replace(second=59, microsecond=999999)
         return start_time, end_time
+
 
 if __name__ == "__main__":
     # start_time, end_time = get_start_and_end_time_of_date('2024-06-13')

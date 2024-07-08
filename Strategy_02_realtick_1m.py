@@ -11,14 +11,11 @@ from dto.ohlc import OhlcDTO
 date_text = '2024-06-13'
 
 # simulate real raw ticker
-def run_strategy(symbol, date_text, prev_date_text, prev_date_ticker_table_name):
+def run_strategy(symbol, date_text, prev_date_text, prev_date_ticker_table_name, startTime, endTime):
     mean_of_prev_buy_volume = ttm.get_mean_buy_volume_from_ticker_table_of_date_text(symbol, prev_date_text)
 
 
     rawTicketDf = ttm.get_ticker_df_from_ticker_table_of_date_text(symbol, date_text)
-
-    # get startTime and endTime
-    startTime, endTime = ttm.get_start_and_end_time_of_date_and_symbol_in(date_text, symbol)
 
     # from startTime to endoTime, loop in 1 minute interval
     range = pd.date_range(start=startTime, end=endTime, freq='1min')
@@ -79,6 +76,22 @@ def run_strategy(symbol, date_text, prev_date_text, prev_date_ticker_table_name)
                     ohlc.sell_volume += row['volume']
                     ohlc.sell_tick_qty += row['qty']
 
+        # check if this minute ohlc, if 'open' is None, then copy from previous minute close price
+        if ohlc.open is None:
+            ohlc.open = df1m.iloc[-1]['close']
+            ohlc.high = df1m.iloc[-1]['close']
+            ohlc.low = df1m.iloc[-1]['close']
+            ohlc.close = df1m.iloc[-1]['close']
+            ohlc.pip_open = df1m.iloc[-1]['pip_close']
+            ohlc.pip_high = df1m.iloc[-1]['pip_close']
+            ohlc.pip_low = df1m.iloc[-1]['pip_close']
+            ohlc.pip_close = df1m.iloc[-1]['pip_close']
+            ohlc.buy_volume = 0
+            ohlc.sell_volume = 0
+            ohlc.qty = 0
+            ohlc.buy_tick_qty = 0
+            ohlc.sell_tick_qty = 0
+
         # add ohlc to df1m, use loopStartTime as index snifftime
         loop1mOhlcDf = pd.DataFrame([ohlc.__dict__], index=[loopStartTime])
 
@@ -113,6 +126,8 @@ def run_strategy(symbol, date_text, prev_date_text, prev_date_ticker_table_name)
                 'buy_time': loopStartTime,
                 'buy_pip_no': df1m.iloc[-1]['pip_close'],
                 'stop_loss_pip_no': df1m.iloc[-1]['pip_high'] - 3
+                , 'sell_price': 0
+                , 'sell_time': '0000-00-00 00:00:00'
             }
 
     # end of for loopStartTime in range: =============================
@@ -120,74 +135,8 @@ def run_strategy(symbol, date_text, prev_date_text, prev_date_ticker_table_name)
     # Clean up unused row, stock market was closed between 12:30 to 14:00, that both sell and buy volume are 0
     df1m = df1m[~((df1m.index >= f'{date_text} 12:30:00') & (df1m.index <= f'{date_text} 14:00:00') & (df1m['buy_volume'] == 0))]
 
-    # add and calculate column that was required by this strategy
-    df1m['vol_signal'] = df1m['buyvolume'] > mean_of_prev_buy_volume * 10
-    df1m['vol_signal'].rolling(window=2).sum()
-    # find first index that vol_signal is True
-    # handle IndexError: index 0 is out of bounds for axis 0 with size 0
-    if len(df1m[df1m['vol_signal']]) == 0:
-        print(f"run_strategy_01 [pid:{os.getpid()}] symbol:{symbol}, df1m.size: {len(df1m)}, mean_of_prev_buy_volume: {mean_of_prev_buy_volume}")
-        return {'buy_price': 0}
-
-    vol_signal_start_time = df1m[df1m['vol_signal']].index[0]
-    # orderStatus used for keep record of order status, 0: no order, 1: buy order, 2: sell order
-    df1m['order_status'] = 0
-
-    # last_index: (time) used for keep record of last index of df1m
-    last_index = df1m.index[-1]
-    buy_price = 0
-
-    # change orders to OrderDTO like Strategy_0102_orderdto.py
-    order: OrderDTO = {'buy_price': 0}
-
-    for index in range(2, len(df1m)):
-        row = df1m.iloc[index]
-        this_index = row.name
-
-        if row['order_status'] == 0:
-
-            # find EMA5 crossover EMA10 from below
-            # add condition only 1 order allow per each symbol
-            if (this_index >= vol_signal_start_time
-                    and row['close_EMA5'] > row['close_EMA10']
-                    and order["buy_price"] == 0
-                    and df1m.iloc[index - 1]['close_EMA5'] < df1m.iloc[index - 1]['close_EMA10']):
-                # Stop loss calculation, by pip_no, now pip_no is mean of pip_no at that minute
-                # stop_loss = row['close'] - 0.0005
-                print(f"BUY: @{row.name}: EMA5 crossover EMA10 at {index}")
-                # set orderStatus to 1, start from current row to last_index
-                df1m.loc[this_index:last_index, 'order_status'] = 1
-                # add buy record to orders dataframe
-                order = {
-                    'symbol': symbol,
-                    'buy_price': row.high,
-                    'max_price': row.high,
-                    'buy_time': row.name,
-                    'buy_pip_no': row.pip_no,
-                    'stop_loss_pip_no': row.pip_high - 3
-                }
-
-        else:  # row['order_status'] == 1
-            # increase stop loss
-            if row['high'] > order['max_price']:
-                # set value of orders last row ['stop_loss_pip_no] to 80% of pip_no
-                # and update maxPrice of Order
-                order['stop_loss_pip_no'] = row['pip_no'] - 3
-                order['max_price'] = row['high']
-
-                # print(f"{row.name}, row.high: {row.high}, orders.iloc[-1]['max_price']: {orders.iloc[-1]['max_price']}, increase stop loss")
-
-            if row['pip_no'] < order['stop_loss_pip_no']:
-                # print(f"SELL: @{row.name}: Stop loss at {index}")
-                df1m.loc[this_index:last_index, 'order_status'] = 0
-                sell_price = row['low']
-                buy_price = 0
-                # add order's sell data to orders dataframe
-                order['sell_price'] = sell_price
-                order['sell_time'] = row.name
-
     # Finally before exit, print out the result
-    print (f"run_strategy_01 [pid:{os.getpid()}] symbol:{symbol}, df1m.size: {len(df1m)}, mean_of_prev_buy_volume: {mean_of_prev_buy_volume}")
+    #print (f"run_strategy_01 [pid:{os.getpid()}] symbol:{symbol}, df1m.size: {len(df1m)}, mean_of_prev_buy_volume: {mean_of_prev_buy_volume}")
     return order
 
 if __name__ == "__main__":
@@ -208,11 +157,28 @@ if __name__ == "__main__":
 
     # get raw ticker for symbol
     # symbols = ['SABUY']
+    # symbols = ['SABUY', 'MCA', 'SINGER', 'SGC', 'CGH']
+    # # 100 symbols
+    symbols = ['SANKO', 'SAK', 'SAF', 'SA', 'S11', 'RSP', 'RPH', 'RPC', 'RP', 'ROJNA', 'ROH', 'ROCTEC', 'RML', 'RJH',
+               'RICHY', 'READY', 'RCL', 'RBF', 'RATCH', 'RAM', 'RABBIT', 'QTCG', 'QTC', 'QLT', 'QHPF', 'QHOP',
+               'QHHRREIT', 'QH', 'PYLON', 'PTTGC', 'PTTEP', 'PTT', 'PTL', 'PTG', 'PTC', 'PT', 'PSTC', 'PSP', 'PSL',
+               'PSH', 'PSG', 'PRTR', 'PROUD', 'PROSPECT', 'PROS', 'PROEN', 'PRM', 'PRINC', 'PRIME', 'PRAPAT', 'PRAKIT',
+               'PR9', 'PQS', 'PPS', 'PPPM', 'PPM', 'PORT', 'POPF', 'POLY', 'PM', 'PLUS', 'PLT', 'PLE', 'PLAT', 'PLANET',
+               'PLANB', 'PL', 'PK', 'PJW', 'PIN', 'PIMO', 'PICO', 'PHOL', 'PHG', 'PHG', 'PG', 'PF', 'PERM', 'PEER',
+               'PEACE', 'PDJ', 'PDG', 'PCSGH', 'PCC']
 
+    # symbols = ['CTARAF', 'CTW', 'CV', 'CWT', 'D', 'DCC', 'DCON', 'DDD', 'DELTA', 'DEMCO', 'DEXON', 'DHOUSE', 'DIF',
+    #            'DIMET', 'DITTO', 'DMT', 'DOD', 'DOHOME', 'DPAINT', 'DREIT', 'DRT', 'DTCENT', 'DUSIT', 'DV8', 'EA',
+    #            'EASON', 'EASTW', 'ECF', 'ECL', 'EE', 'EFORL', 'EGATIF', 'EGCO', 'EKH', 'EMC', 'EP', 'EPG', 'ERW',
+    #            'ESTAR', 'ETC', 'ETE', 'ETL', 'EURO', 'EVER', 'F&D', 'FANCY', 'FE', 'FLOYD', 'FMT', 'FN', 'FNS', 'FORTH',
+    #            'FPI', 'FPT', 'FSMART', 'FSX', 'FTE', 'FTI', 'FTREIT', 'FUTUREPF', 'FVC', 'GABLE', 'GAHREIT', 'GBX',
+    #            'GC', 'GCAP', 'GEL', 'GENCO', 'GFC', 'GFPT', 'GGC', 'GIFT', 'GJS', 'GLAND', 'GLOBAL', 'GLOCON', 'GLORY',
+    #            'GPI', 'GPSC', 'GRAMMY', 'GRAND', 'GREEN', 'GROREIT', 'GSC', 'GTB', 'GTV', 'GULF', 'GUNKUL', 'GVREIT',
+    #            'GYT', 'HANA', 'HARN', 'HEALTH', 'HENG', 'HFT', 'HL', 'HMPRO', 'HPF', 'HPT', 'HTC']
     # creating a pool object, initializing worker function, limit to 5 workers
-    pool = multiprocessing.Pool(processes=1)
+    pool = multiprocessing.Pool(processes=15)
 
-    result = pool.starmap(run_strategy, [(symbol, date_text, prev_date_text, prev_date_ticker_table_name) for symbol in symbols])
+    result = pool.starmap(run_strategy, [(symbol, date_text, prev_date_text, prev_date_ticker_table_name, startTime, endTime) for symbol in symbols])
 
 
 
