@@ -4,8 +4,6 @@ import multiprocessing
 import utils.db_utils as dbu
 import utils.stockeod_utils as stockeod
 import utils.ticker_table_manager as ttm
-import utils.pip_utils as pipu
-from dto.OrderDTO import OrderDTO
 
 # from stockeod table, get the stock list in date_text
 date_text = '2024-10-04'
