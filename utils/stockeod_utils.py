@@ -14,6 +14,7 @@ def get_prev_date(current_date):
         else:
             return None
 
+
 def get_stock_list_in_date_text(date_text):
     with dbu.get_pool().get_connection() as con:
         cursor = con.cursor()

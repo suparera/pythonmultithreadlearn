@@ -80,11 +80,12 @@ def get_df1m_from_ticker_table_of_date_text(symbol, date_text):
         , CASE WHEN side = 'S' THEN qty ELSE 0 END AS sellTickQty
         , CASE WHEN side = 'B' THEN 1 ELSE 0 END AS buyId
         , CASE WHEN side = 'S' THEN 1 ELSE 0 END AS sellId
+        , 1 AS totalId
         FROM {ticker_table_name} WHERE symbol = '{symbol}';"""
         cursor.execute(sql)
         myresult = cursor.fetchall()
         df = pd.DataFrame(myresult, columns=['sniffTime', 'price', 'side', 'qty', 'buyVolume', 'sellVolume', 'pip_no',
-                                             'buyTickQty', 'sellTickQty', 'buyId', 'sellId'])
+                                             'buyTickQty', 'sellTickQty', 'buyId', 'sellId', 'totalId'])
         df['price'] = df['price'].astype(float)
         df.set_index('sniffTime', inplace=True)
         # catch exception TypeError: Only valid with DatetimeIndex, TimedeltaIndex or PeriodIndex, but got an instance of 'Index'
@@ -102,6 +103,7 @@ def get_df1m_from_ticker_table_of_date_text(symbol, date_text):
                 , 'sellTickQty': 'sum'
                 , 'buyId': 'sum'
                 , 'sellId': 'sum'
+                , 'totalId': 'sum'
             })
         except Exception as e:
             # print(f"Error: {e}")
@@ -115,7 +117,7 @@ def get_df1m_from_ticker_table_of_date_text(symbol, date_text):
             'open', 'high', 'low', 'close'
             , 'buyVolume', 'sellVolume', 'qty'
             , 'pip_open', 'pip_high', 'pip_low', 'pip_close'
-            , 'buyTickQty', 'sellTickQty', 'buyId', 'sellId'
+            , 'buyTickQty', 'sellTickQty', 'buyId', 'sellId', 'totalId'
         ]
 
         return df1m

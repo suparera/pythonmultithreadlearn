@@ -147,7 +147,7 @@ if __name__ == "__main__":
     #     # , '2024-07-08', '2024-07-09', '2024-07-10', '2024-07-11', '2024-07-12'
     #     , '2024-07-12', '2024-07-16', '2024-07-17', '2024-07-18', '2024-07-19'
     # ]
-    dateList = ['2024-09-13']
+    dateList = ['2024-08-23']
 
     for date_text in dateList:
         print("Start with date_text: {0}".format(date_text))
@@ -160,7 +160,7 @@ if __name__ == "__main__":
 
         # symbols = for easily or controlled testing use the list ex: ['SABUY', 'MCA']
         # symbols = stockeod.get_stock_list_in_date_text(prev_date_text)
-        symbols = ['BYD','EA']
+        symbols = ['EA']
 
 
         # creating a pool object, initializing worker function, limit to 5 workers
@@ -190,9 +190,9 @@ if __name__ == "__main__":
     orders = pd.DataFrame(result)
     # remove orders where buy_price is 0, or not contain any buy_price
 
-    # if orders size is 0
-    if orders.size == 0:
-        print("No orders found")
+    # if orders size is 0, then print out error_symbols, and exit
+    if len(orders) == 0:
+        print(f"error_symbols: {error_symbols}")
         exit()
 
     orders = orders[orders['buy_price'] != 0]
