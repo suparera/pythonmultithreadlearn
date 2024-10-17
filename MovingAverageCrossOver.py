@@ -1,4 +1,4 @@
-from TradingStrategy import TradingStrategy
+from TradingStrategy2 import TradingStrategy
 import pandas as pd
 
 class MovingAverageCrossOver(TradingStrategy):

@@ -1,4 +1,4 @@
-from TradingStrategy import TradingStrategy
+from TradingStrategy2 import TradingStrategy
 import pandas as pd
 import numpy as np
 

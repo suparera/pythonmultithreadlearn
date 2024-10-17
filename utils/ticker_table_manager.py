@@ -169,9 +169,21 @@ def get_start_and_end_time_of_date_and_symbol_in(date_text, symbols):
         end_time = myresult[0][1].replace(second=59, microsecond=999999)
         return start_time, end_time
 
+def get_ticker_time(date_text):
+    with dbu.get_pool().get_connection() as con:
+        cursor = con.cursor()
+        sql = f"""select startTime from ticker_time where date = '{date_text}';"""
+        cursor.execute(sql)
+        myresult = cursor.fetchall()
+        # convert timedelta to time (hh:mm:ss)
+        stock_market_start_time = myresult[0][0].total_seconds()//3600, (myresult[0][0].total_seconds()//60)%60
+        stock_market_start_time_str = f"{int(stock_market_start_time[0]):02}:{int(stock_market_start_time[1]):02}:00"
+        return datetime.strptime(date_text + " " + stock_market_start_time_str, '%Y-%m-%d %H:%M:%S')
+
 
 if __name__ == "__main__":
     # start_time, end_time = get_start_and_end_time_of_date('2024-06-13')
     # print(start_time, end_time)
-    df1m = get_df1m_from_ticker_table_of_date_text('SABUY', '2024-06-13')
-    print(df1m)
+    # df1m = get_df1m_from_ticker_table_of_date_text('SABUY', '2024-06-13')
+    print(get_ticker_time("2024-09-16"))
+

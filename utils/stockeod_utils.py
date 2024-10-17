@@ -1,4 +1,5 @@
 from datetime import datetime
+from utils.pip_utils import get_buy_pip
 
 import utils.db_utils as dbu
 import pandas as pd
@@ -30,3 +31,16 @@ if __name__ == "__main__":
     current_date = '2024-06-13'
     prev_date = get_prev_date(current_date)
     print(f"prev_date: {prev_date}")
+
+
+def get_prev_date_close_pip(symbol, prev_date_text):
+    with dbu.get_pool().get_connection() as con:
+        cursor = con.cursor()
+        sql = "SELECT closep FROM stockeod WHERE Date = '" + prev_date_text + "' and symbol = '" + symbol + "'"
+        cursor.execute(sql)
+        result = cursor.fetchall()
+
+        if len(result) > 0:
+            return get_buy_pip(result[0][0], 'B')
+        else:
+            return None

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 
-
-class TradingStrategy(ABC):
+class Condition(ABC):
     @abstractmethod
-    def generate_signal(self, data):
+    def check(self, data, cond_results=None):
         pass
+

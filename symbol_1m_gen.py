@@ -6,7 +6,7 @@ import utils.stockeod_utils as stockeod
 import utils.ticker_table_manager as ttm
 
 # from stockeod table, get the stock list in date_text
-date_text = '2024-10-04'
+date_text = '2024-10-16'
 symbols = stockeod.get_stock_list_in_date_text(date_text)
 
 dbu.get_pool()
