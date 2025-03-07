@@ -10,9 +10,10 @@ class OpenPipJumpCondition(Condition):
     required columns: pip_high, pip_low
     '''
 
-    def __init__(self, prev_day_close_pip=None):
+    def __init__(self, name, prev_day_close_pip=None):
+        self.name = name
         if prev_day_close_pip is not None:
             self.prev_day_close_pip = 0
 
-    def check(self, open_pip_no, cond_results=None):
-        return open_pip_no - 2 >= self.prev_day_close_pip
+    def check(self, data, df_1m, cond_results=None):
+        return data.iloc[0]['pip_open'] - 2 >= self.prev_day_close_pip
